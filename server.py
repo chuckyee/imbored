@@ -2,17 +2,11 @@ from flask import Flask, request
 import requests
 import time
 import json
+import apiai
 
 app = Flask(__name__)
 
 def reply(user_id, msg):
-    punctuation = '.?!'
-    append = app.config['BOT_APPEND_STRING']
-    if msg[-1] in punctuation:
-        reply = '{} {}{}'.format(msg.strip(punctuation), append, msg[-1])
-    else:
-        reply = '{} {}'.format(msg, append)
-
     url = "https://graph.facebook.com/v2.6/me/messages?access_token="
     url += app.config['PAGE_ACCESS_TOKEN']
 
@@ -23,6 +17,24 @@ def reply(user_id, msg):
     }
     resp = requests.post(url, json=data)
     print(resp)
+
+    # send text to API.ai chatbot
+    request = ai.text_request()
+    request.query = msg
+    response = json.loads(request.getresponse().read())
+    result = response['result']
+    action = result.get('action')
+    if action:
+        # chatbot had something to say
+        reply = result['fulfillment']['speech']
+    else:
+        # default to our stupid message
+        punctuation = '.?!'
+        append = app.config['BOT_APPEND_STRING']
+        if msg[-1] in punctuation:
+            reply = '{} {}{}'.format(msg.strip(punctuation), append, msg[-1])
+        else:
+            reply = '{} {}'.format(msg, append)
 
     # Wait a moment so bot can "think"
     delay = app.config['BOT_TIME_THINK']
@@ -90,4 +102,5 @@ def handle_incoming_messages():
 
 if __name__ == '__main__':
     app.config.from_pyfile('config')
+    ai = apiai.ApiAI(app.config['APIAI_CLIENT_ACCESS_TOKEN'])
     app.run(port=int(app.config['PORT']), debug=True)
