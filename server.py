@@ -3,8 +3,25 @@ import requests
 import time
 import json
 import apiai
+import threading
 
 app = Flask(__name__)
+
+def start_typing(url, user_id, log=True):
+    data = {
+        "recipient" : {"id": user_id},
+        "sender_action" : "typing_on",
+    }
+    resp = requests.post(url, json=data)
+    if log: print(resp)
+
+def send_response(url, user_id, reply, log=True):
+    data = {
+        "recipient": {"id": user_id},
+        "message": {"text": reply},
+    }
+    resp = requests.post(url, json=data)
+    if log: print(resp.content)
 
 def reply(user_id, msg):
     url = "https://graph.facebook.com/v2.6/me/messages?access_token="
@@ -36,39 +53,17 @@ def reply(user_id, msg):
         else:
             reply = '{} {}'.format(msg, append)
 
-    # Wait a moment so bot can "think"
+    # Wait a moment so bot can "think" before starting to "type"
     delay = app.config['BOT_TIME_THINK']
-    print("Thinking for {} sec.".format(delay))
-    time.sleep(delay)
+    print("Thinking until +{} sec.".format(delay))
+    timer_thinking = threading.Timer(delay, start_typing, args=[url, user_id])
+    timer_thinking.start()
 
-    # Then start "typing"
-    data = {
-        "recipient" : {"id": user_id},
-        "sender_action" : "typing_on",
-    }
-    resp = requests.post(url, json=data)
-    print(resp)
-
-    # Wait while the bot "types"
-    delay = len(reply) / app.config['BOT_TIME_CHARS_PER_SEC']
-    print("Typing for {} sec.".format(delay))
-    time.sleep(delay)
-
-    # Finally send what the bot wrote
-    data = {
-        "recipient": {"id": user_id},
-        "message": {"text": reply},
-    }
-    resp = requests.post(url, json=data)
-    print(resp.content)
-
-    # Finally turn off "typing"
-    data = {
-        "recipient": {"id": user_id},
-        "sender_action" : "typing_off",
-    }
-    resp = requests.post(url, json=data)
-    print(resp.content)
+    # Wait while the bot "types" before sending the message
+    delay += len(reply) / app.config['BOT_TIME_CHARS_PER_SEC']
+    print("Typing until +{} sec.".format(delay))
+    timer_typing = threading.Timer(delay, send_response, args=[url, user_id, reply])
+    timer_typing.start()
 
 
 @app.route('/', methods=['GET'])
