@@ -52,6 +52,7 @@ def reply(user_id, msg):
             reply = '{} {}{}'.format(msg.strip(punctuation), append, msg[-1])
         else:
             reply = '{} {}'.format(msg, append)
+    print(user_id, reply)
 
     # Wait a moment so bot can "think" before starting to "type"
     delay = app.config['BOT_TIME_THINK']
