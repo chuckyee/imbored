@@ -8,121 +8,6 @@ import threading
 app = Flask(__name__)
 
 
-
-"""
-{
-  "recipient":{
-    "id":"RECIPIENT_ID"
-  }, "message": {
-    "attachment": {
-        "type": "template",
-        "payload": {
-            "template_type": "list",
-            "top_element_style": "compact",
-            "elements": [
-                {
-                    "title": "Classic White T-Shirt",
-                    "image_url": "https://peterssendreceiveapp.ngrok.io/img/white-t-shirt.png",
-                    "subtitle": "100% Cotton, 200% Comfortable",
-                    "default_action": {
-                        "type": "web_url",
-                        "url": "https://peterssendreceiveapp.ngrok.io/view?item=100",
-                        "messenger_extensions": true,
-                        "webview_height_ratio": "tall",
-                        "fallback_url": "https://peterssendreceiveapp.ngrok.io/"
-                    },
-                    "buttons": [
-                        {
-                            "title": "Buy",
-                            "type": "web_url",
-                            "url": "https://peterssendreceiveapp.ngrok.io/shop?item=100",
-                            "messenger_extensions": true,
-                            "webview_height_ratio": "tall",
-                            "fallback_url": "https://peterssendreceiveapp.ngrok.io/"                        
-                        }
-                    ]                
-                },
-                {
-                    "title": "Classic Blue T-Shirt",
-                    "image_url": "https://peterssendreceiveapp.ngrok.io/img/blue-t-shirt.png",
-                    "subtitle": "100% Cotton, 200% Comfortable",
-                    "default_action": {
-                        "type": "web_url",
-                        "url": "https://peterssendreceiveapp.ngrok.io/view?item=101",
-                        "messenger_extensions": true,
-                        "webview_height_ratio": "tall",
-                        "fallback_url": "https://peterssendreceiveapp.ngrok.io/"
-                    },
-                    "buttons": [
-                        {
-                            "title": "Buy",
-                            "type": "web_url",
-                            "url": "https://peterssendreceiveapp.ngrok.io/shop?item=101",
-                            "messenger_extensions": true,
-                            "webview_height_ratio": "tall",
-                            "fallback_url": "https://peterssendreceiveapp.ngrok.io/"                        
-                        }
-                    ]                
-                },
-                {
-                    "title": "Classic Black T-Shirt",
-                    "image_url": "https://peterssendreceiveapp.ngrok.io/img/black-t-shirt.png",
-                    "subtitle": "100% Cotton, 200% Comfortable",
-                    "default_action": {
-                        "type": "web_url",
-                        "url": "https://peterssendreceiveapp.ngrok.io/view?item=102",
-                        "messenger_extensions": true,
-                        "webview_height_ratio": "tall",
-                        "fallback_url": "https://peterssendreceiveapp.ngrok.io/"
-                    },
-                    "buttons": [
-                        {
-                            "title": "Buy",
-                            "type": "web_url",
-                            "url": "https://peterssendreceiveapp.ngrok.io/shop?item=102",
-                            "messenger_extensions": true,
-                            "webview_height_ratio": "tall",
-                            "fallback_url": "https://peterssendreceiveapp.ngrok.io/"                        
-                        }
-                    ]                
-                },
-                {
-                    "title": "Classic Gray T-Shirt",
-                    "image_url": "https://peterssendreceiveapp.ngrok.io/img/gray-t-shirt.png",
-                    "subtitle": "100% Cotton, 200% Comfortable",
-                    "default_action": {
-                        "type": "web_url",
-                        "url": "https://peterssendreceiveapp.ngrok.io/view?item=103",
-                        "messenger_extensions": true,
-                        "webview_height_ratio": "tall",
-                        "fallback_url": "https://peterssendreceiveapp.ngrok.io/"
-                    },
-                    "buttons": [
-                        {
-                            "title": "Buy",
-                            "type": "web_url",
-                            "url": "https://peterssendreceiveapp.ngrok.io/shop?item=103",
-                            "messenger_extensions": true,
-                            "webview_height_ratio": "tall",
-                            "fallback_url": "https://peterssendreceiveapp.ngrok.io/"                        
-                        }
-                    ]                
-                }
-            ],
-             "buttons": [
-                {
-                    "title": "View More",
-                    "type": "postback",
-                    "payload": "payload"                        
-                }
-            ]  
-        }
-    }
-}
-    
-}
-"""
-
 def form_url(endpoint, params):
     query_string = "&".join(["{}={}".format(k, params[k]) for k in params])
     return "{}?{}".format(endpoint, query_string)
@@ -141,22 +26,104 @@ def query_foursquare(latitude, longitude):
     url = form_url(endpoint, params)
 
     results = requests.get(url).json()
+    # print(json.dumps(results, sort_keys=True, indent=2, separators=(',', ' : ')))
 
     # Parse response
     meta = results['meta']
     response = results['response']
 
-    keywords = reponse['keywords']
     header_location = response['headerLocation']
-    groups = reponse['groups']
+    groups = response['groups']
+
+    recommendations = []
+    title = []
     for group in groups:
         group_description = group['type']
+        title.append(group_description)
         for item in group['items']:
-            item['reasons']
-            item['tips']
             venue = item['venue']
-            name = venue['name']
-    print(json.dumps(results, sort_keys=True, indent=2, separators=(',', ' : ')))
+            price = '$'*venue['price']['tier'] if 'price' in venue else ''
+            details = {
+                "name": venue['name'],
+                "price": price,
+            }
+            recommendations.append(details)
+            # item['reasons']
+            # item['tips']
+    reply = {
+        "title": " & ".join(title),
+        "recommendations": recommendations,
+    }
+    return reply
+
+def reply_with_recommendations(user_id, latitude, longitude):
+    endpoint = "https://graph.facebook.com/v2.6/me/messages"
+    endpoint = "https://graph.facebook.com/me/messages"
+    params = {"access_token": app.config['FACEBOOK_PAGE_ACCESS_TOKEN']}
+    url = form_url(endpoint, params)
+
+    # Immediately mark message as seen
+    mark_seen(url, user_id)
+
+    reply = query_foursquare(latitude, longitude)
+
+    elements = []
+    for venue in reply['recommendations']:
+        element = {
+            "title": venue["name"],
+            "subtitle": venue["price"],
+            "image_url": "https://s20.postimg.org/gbwoaexl9/SALA_1.jpg",
+            "default_action": {
+                "type": "web_url",
+                "url": "https://www.google.com",
+                "webview_height_ratio": "tall"
+            },
+        }
+        elements.append(element)
+
+    # Facebook only supports up to 4 elements in list
+    if len(elements) > 4:
+        elements = elements[:4]
+
+    button = {
+        "title": "View More",
+        "type": "postback",
+        "payload": "View more",
+    }
+
+    list_template = {
+        "template_type": "list",
+        "top_element_style": "compact",
+        "elements": elements,
+        "buttons": [button],
+    }
+
+    attachment = {
+        "type": "template",
+        "payload": list_template
+    }
+
+    data = {
+        "recipient" : {"id": user_id},
+        "message" : {
+            "attachment": attachment,
+        },
+    }
+
+    # data = {
+    #     "recipient" : {"id": user_id},
+    #     "message" : {
+    #         "text": "Where are you?",
+    #         "quick_replies": [
+    #             {
+    #                 "content_type": "location",
+    #             }
+    #         ]
+    #     }
+    # }
+
+    resp = requests.post(url, json=data)
+    print("FB response to list:", resp)
 
 def mark_seen(url, user_id, log=True):
     data = {
@@ -174,7 +141,7 @@ def start_typing(url, user_id, log=True):
     resp = requests.post(url, json=data)
     if log: print(resp)
 
-def send_response(url, user_id, reply, log=True):
+def send_text(url, user_id, reply, log=True):
     data = {
         "recipient": {"id": user_id},
         "message": {"text": reply},
@@ -192,7 +159,7 @@ def query_apiai(msg):
     return reply
 
 def reply(user_id, msg):
-    url = "https://graph.facebook.com/v2.6/me/messages"
+    endpoint = "https://graph.facebook.com/v2.6/me/messages"
     params = {"access_token": app.config['FACEBOOK_PAGE_ACCESS_TOKEN']}
     url = form_url(endpoint, params)
 
@@ -219,7 +186,7 @@ def reply(user_id, msg):
     # Wait while the bot "types" before sending the message
     delay += len(reply) / app.config['BOT_TIME_CHARS_PER_SEC']
     print("Typing until +{} sec.".format(delay))
-    timer_typing = threading.Timer(delay, send_response, args=[url, user_id, reply])
+    timer_typing = threading.Timer(delay, send_text, args=[url, user_id, reply])
     timer_typing.start()
 
 
@@ -250,7 +217,7 @@ def handle_incoming_messages():
                     payload = attachment["payload"]
                     latitude = payload["coordinates"]["lat"]
                     longitude = payload["coordinates"]["long"]
-                    query_foursquare(latitude, longitude)
+                    reply_with_recommendations(sender, latitude, longitude)
         else:
             pass
     elif "delivery" in messaging:
