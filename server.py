@@ -10,7 +10,7 @@ app = Flask(__name__)
 
 
 """
-curl -X POST -H "Content-Type: application/json" -d '{
+{
   "recipient":{
     "id":"RECIPIENT_ID"
   }, "message": {
@@ -120,13 +120,17 @@ curl -X POST -H "Content-Type: application/json" -d '{
     }
 }
     
-}' "https://graph.facebook.com/me/messages?access_token=PAGE_ACCESS_TOKEN"
+}
 """
+
+def form_url(endpoint, params):
+    query_string = "&".join(["{}={}".format(k, params[k]) for k in params])
+    return "{}?{}".format(endpoint, query_string)
 
 def query_foursquare(latitude, longitude):
     print("Foursquare: lat = {}  long = {}".format(latitude, longitude))
     endpoint = "https://api.foursquare.com/v2/venues/explore"
-    query = {
+    params = {
         "client_id":     app.config["FOURSQUARE_CLIENT_ID"],
         "client_secret": app.config["FOURSQUARE_CLIENT_SECRET"],
         "v":             app.config["FOURSQUARE_VERSION"],
@@ -134,8 +138,7 @@ def query_foursquare(latitude, longitude):
         # "radius":        radius,
         # "limit":         app.config["FOURSQUARE_LIMIT"]
     }
-    query_string = "&".join(["{}={}".format(k, query[k]) for k in query])
-    url = "{}?{}".format(endpoint, query_string)
+    url = form_url(endpoint, params)
 
     results = requests.get(url).json()
 
@@ -149,7 +152,10 @@ def query_foursquare(latitude, longitude):
     for group in groups:
         group_description = group['type']
         for item in group['items']:
-            pass
+            item['reasons']
+            item['tips']
+            venue = item['venue']
+            name = venue['name']
     print(json.dumps(results, sort_keys=True, indent=2, separators=(',', ' : ')))
 
 def mark_seen(url, user_id, log=True):
@@ -186,8 +192,9 @@ def query_apiai(msg):
     return reply
 
 def reply(user_id, msg):
-    url = "https://graph.facebook.com/v2.6/me/messages?access_token="
-    url += app.config['FACEBOOK_PAGE_ACCESS_TOKEN']
+    url = "https://graph.facebook.com/v2.6/me/messages"
+    params = {"access_token": app.config['FACEBOOK_PAGE_ACCESS_TOKEN']}
+    url = form_url(endpoint, params)
 
     # Immediately mark message as seen
     mark_seen(url, user_id)
