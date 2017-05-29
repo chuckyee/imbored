@@ -6,6 +6,8 @@ import apiai
 import threading
 import random
 
+METERS_PER_MILE = 1609.34
+
 app = Flask(__name__)
 
 
@@ -52,11 +54,17 @@ def query_foursquare(latitude, longitude, log=True):
             venue_url = venue.get("url")
             if not venue_url:
                 venu_url = form_url("https://www.google.com/search", {"q": '+'.join(name.split())})
+            distance = venue['location'].get('distance')
+            if distance is not None:
+                distance = "{:2.1f}mi".format(distance / METERS_PER_MILE)
+            else:
+                distance = ''
             details = {
                 "id": venue_id,
                 "name": name,
                 "price": price,
                 "url": venue_url,
+                "distance": distance,
             }
             recommendations.append(details)
             # item['reasons']
@@ -111,7 +119,7 @@ def reply_with_recommendations(user_id, latitude, longitude):
     for venue in recommendations:
         element = {
             "title": venue["name"],
-            "subtitle": venue["price"],
+            "subtitle": "{} {}".format(venue["price"], venue["distance"]),
             "default_action": {
                 "type": "web_url",
                 "url": venue["url"],
