@@ -4,6 +4,7 @@ import time
 import json
 import apiai
 import threading
+import random
 
 app = Flask(__name__)
 
@@ -20,8 +21,8 @@ def query_foursquare(latitude, longitude, log=True):
         "client_secret": app.config["FOURSQUARE_CLIENT_SECRET"],
         "v":             app.config["FOURSQUARE_VERSION"],
         "ll":            "{},{}".format(latitude, longitude),
+        "limit":         app.config["FOURSQUARE_LIMIT"],
         # "radius":        radius,
-        # "limit":         app.config["FOURSQUARE_LIMIT"]
     }
     url = form_url(endpoint, params)
 
@@ -72,7 +73,7 @@ def query_foursquare_photos(venue_id, photo_size="100x100", limit=10, log=True):
         "client_id":     app.config["FOURSQUARE_CLIENT_ID"],
         "client_secret": app.config["FOURSQUARE_CLIENT_SECRET"],
         "v":             app.config["FOURSQUARE_VERSION"],
-        "limit": limit
+        "limit":         limit,
     }
     url = form_url(endpoint, params)
     results = requests.get(url).json()
@@ -102,8 +103,12 @@ def reply_with_recommendations(user_id, latitude, longitude):
 
     reply = query_foursquare(latitude, longitude, log=False)
 
+    # randomly select (up to) 4 venues to show
+    to_show = min(len(reply['recommendations']), 4)
+    recommendations = random.sample(reply['recommendations'], to_show)
+
     elements = []
-    for venue in reply['recommendations']:
+    for venue in recommendations:
         element = {
             "title": venue["name"],
             "subtitle": venue["price"],
@@ -118,21 +123,17 @@ def reply_with_recommendations(user_id, latitude, longitude):
             element["image_url"] = photo_urls[0]
         elements.append(element)
 
-    # Facebook only supports up to 4 elements in list
-    if len(elements) > 4:
-        elements = elements[:4]
-
-    button = {
-        "title": "View More",
-        "type": "postback",
-        "payload": "View more",
-    }
+    # button = {
+    #     "title": "View More",
+    #     "type": "postback",
+    #     "payload": "View more",
+    # }
 
     list_template = {
         "template_type": "list",
         "top_element_style": "compact",
         "elements": elements,
-        "buttons": [button],
+        # "buttons": [button],
     }
 
     attachment = {
