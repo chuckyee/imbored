@@ -12,7 +12,7 @@ def form_url(endpoint, params):
     query_string = "&".join(["{}={}".format(k, params[k]) for k in params])
     return "{}?{}".format(endpoint, query_string)
 
-def query_foursquare(latitude, longitude):
+def query_foursquare(latitude, longitude, log=True):
     print("Foursquare: lat = {}  long = {}".format(latitude, longitude))
     endpoint = "https://api.foursquare.com/v2/venues/explore"
     params = {
@@ -26,7 +26,8 @@ def query_foursquare(latitude, longitude):
     url = form_url(endpoint, params)
 
     results = requests.get(url).json()
-    # print(json.dumps(results, sort_keys=True, indent=2, separators=(',', ' : ')))
+    if log:
+        print(json.dumps(results, sort_keys=True, indent=2, separators=(',', ' : ')))
 
     # Parse response
     meta = results['meta']
@@ -42,10 +43,19 @@ def query_foursquare(latitude, longitude):
         title.append(group_description)
         for item in group['items']:
             venue = item['venue']
+            if not venue['hours']['isOpen']: # ignore closed venues
+                continue
+            venue_id = venue['id']
+            name = venue['name']
             price = '$'*venue['price']['tier'] if 'price' in venue else ''
+            venue_url = venue.get("url")
+            if not venue_url:
+                venu_url = form_url("https://www.google.com/search", {"q": '+'.join(name.split())})
             details = {
-                "name": venue['name'],
+                "id": venue_id,
+                "name": name,
                 "price": price,
+                "url": venue_url,
             }
             recommendations.append(details)
             # item['reasons']
@@ -56,6 +66,31 @@ def query_foursquare(latitude, longitude):
     }
     return reply
 
+def query_foursquare_photos(venue_id, photo_size="100x100", limit=10, log=True):
+    endpoint = "https://api.foursquare.com/v2/venues/{}/photos".format(venue_id)
+    params = {
+        "client_id":     app.config["FOURSQUARE_CLIENT_ID"],
+        "client_secret": app.config["FOURSQUARE_CLIENT_SECRET"],
+        "v":             app.config["FOURSQUARE_VERSION"],
+        "limit": limit
+    }
+    url = form_url(endpoint, params)
+    results = requests.get(url).json()
+    if log:
+        print(json.dumps(results, sort_keys=True, indent=2, separators=(',', ' : ')))
+
+    # Parse response
+    meta = results['meta']
+    response = results['response']
+
+    photos = response['photos']
+    count = photos['count']
+    photo_urls = []
+    for item in photos['items']:
+        photo_url = "{}{}{}".format(item['prefix'], photo_size, item['suffix'])
+        photo_urls.append(photo_url)
+    return photo_urls
+
 def reply_with_recommendations(user_id, latitude, longitude):
     endpoint = "https://graph.facebook.com/v2.6/me/messages"
     endpoint = "https://graph.facebook.com/me/messages"
@@ -65,20 +100,22 @@ def reply_with_recommendations(user_id, latitude, longitude):
     # Immediately mark message as seen
     mark_seen(url, user_id)
 
-    reply = query_foursquare(latitude, longitude)
+    reply = query_foursquare(latitude, longitude, log=False)
 
     elements = []
     for venue in reply['recommendations']:
         element = {
             "title": venue["name"],
             "subtitle": venue["price"],
-            "image_url": "https://s20.postimg.org/gbwoaexl9/SALA_1.jpg",
             "default_action": {
                 "type": "web_url",
-                "url": "https://www.google.com",
+                "url": venue["url"],
                 "webview_height_ratio": "tall"
             },
         }
+        photo_urls = query_foursquare_photos(venue["id"])
+        if photo_urls:
+            element["image_url"] = photo_urls[0]
         elements.append(element)
 
     # Facebook only supports up to 4 elements in list
@@ -110,18 +147,6 @@ def reply_with_recommendations(user_id, latitude, longitude):
         },
     }
 
-    # data = {
-    #     "recipient" : {"id": user_id},
-    #     "message" : {
-    #         "text": "Where are you?",
-    #         "quick_replies": [
-    #             {
-    #                 "content_type": "location",
-    #             }
-    #         ]
-    #     }
-    # }
-
     resp = requests.post(url, json=data)
     print("FB response to list:", resp)
 
@@ -149,14 +174,30 @@ def send_text(url, user_id, reply, log=True):
     resp = requests.post(url, json=data)
     if log: print(resp.content)
 
-def query_apiai(msg):
+def query_location(url, user_id, text="Where are you?", log=True):
+    data = {
+        "recipient" : {"id": user_id},
+        "message" : {
+            "text": text,
+            "quick_replies": [
+                {
+                    "content_type": "location",
+                }
+            ]
+        }
+    }
+    resp = requests.post(url, json=data)
+    if log: print(resp.content)
+
+def query_apiai(msg, log=True):
     request = ai.text_request()
     request.query = msg
     response = json.loads(request.getresponse().read())
+    if log: print(response)
     result = response['result']
     action = result.get('action')  # check if chatbot had something to say
     reply = result['fulfillment']['speech'] if action else ''
-    return reply
+    return (action, reply)
 
 def reply(user_id, msg):
     endpoint = "https://graph.facebook.com/v2.6/me/messages"
@@ -173,7 +214,7 @@ def reply(user_id, msg):
     timer_thinking.start()
 
     # query API.ai chatbot with user's text
-    reply = query_apiai(msg)
+    action, reply = query_apiai(msg)
     if not reply:               # otherwise default to our stupid message
         punctuation = '.?!'
         append = app.config['BOT_APPEND_STRING']
@@ -189,6 +230,15 @@ def reply(user_id, msg):
     timer_typing = threading.Timer(delay, send_text, args=[url, user_id, reply])
     timer_typing.start()
 
+    if action == 'smalltalk.user.bored':
+        delay += 0.2
+        timer_thinking2 = threading.Timer(delay, start_typing, args=[url, user_id])
+        timer_thinking2.start()
+        text = "But tell me where you are, and I'll find something to entertain you."
+        delay += len(text) / app.config['BOT_TIME_CHARS_PER_SEC']
+        timer_location = threading.Timer(delay, query_location, args=[url, user_id, text])
+        timer_location.start()
+        
 
 @app.route('/', methods=['GET'])
 def handle_verification():
